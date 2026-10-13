@@ -10,26 +10,37 @@ List every discrete decision or action in your agent's workflow, then score each
 
 | Decision / action | Reversibility (H/M/L) | Blast radius (H/M/L) | Measurability (H/M/L) | Above / Below | HITL? |
 |---|---|---|---|---|---|
-| _Pull project state + recent GitHub/Jira activity_ | H | L | H | Below | · |
-| _Draft the weekly leadership status update_ | H | M | M | Below | spot-check |
-| _Propose next sprint's stories from the PRD (within cap)_ | M | M | M | Below | spot-check |
-| _Post the update to a channel / commit a ship date_ | L | H | M | Above | required |
-| _Mark a launch gate green / merge or close a ticket_ | L | H | M | Above | required |
-| _…_ | | | | | |
+| Pull project state + activity | H | M | H | HITL | Yes |
+| Decide relevant context | M | M | M | HITL | Yes |
+| Draft the update | H | L | H | Below | No |
+| Decide tone/commitment level | M | M | M | HITL | Yes |
+| Flag at-risk/escalation | L | H | M | Above | No |
+| Choose what to escalate | M | H | M | Above | No |
+| Propose a capped story batch | H | M | M | HITL | Yes |
+| Post a routine project update | L | H | H | HITL | Yes |
+| Approve a company-wide update | L | H | M | Above | No |
 
 ## Agent anatomy (sketch)
 
-- **Model:** _your default fast model + when you escalate to a frontier model, and why_
-- **Tools:** _project + activity lookup (read) · past-update search · roadmap · team norms · story proposal (capped) …_
-- **Memory:** _what persists across runs (roadmap, decisions, norms) vs. purged_
+- **Model:** Use a fast, lower-cost model for routine retrieval and drafting. Escalate to a stronger model when project data conflicts or critical-path impact is ambiguous.
+- **Tools:** Read project activity, roadmap, past updates, and team norms; draft updates and capped story proposals. Publishing requires human approval.
+- **Memory:** Retain approved project facts, decisions, roadmap, and team norms with their sources. Discard transient drafts and unverified inferences.
 - **Loop:** _placeholder, defined in M2 loop-spec.md_
 - **Bounds:** _placeholder, defined in M5 bounds-and-evals.md_
 - **Evals:** _placeholder, defined in M5 bounds-and-evals.md_
 
 ## The golden rule, applied
 
-_One sentence per above-the-line decision: why it stays human (which of reversibility / blast radius / measurability failed)._
+- Pull project state + activity is HITL because it is easy to reverse, has a medium blast radius, and is easy to verify; measurability is the deciding factor, so a human checks that the data is correct.
+- Decide relevant context is HITL because it has medium reversibility, blast radius, and measurability; measurability is the deciding factor, so a human can manually assess the context selection.
+- Draft the update sits Below because it is easy to revise, has a low blast radius, and is easy to check; blast radius is the deciding factor, since a human can review the draft before it is posted.
+- Decide tone/commitment level is HITL because it has medium reversibility, blast radius, and measurability; measurability is the deciding factor, since a human checks that it is appropriate and realistic for the use case.
+- Flag at-risk/escalation stays Above because it is hard to reverse, has a high blast radius, and is moderately measurable; blast radius is the deciding factor, and a human has better context.
+- Choose what to escalate stays Above because it has medium reversibility, a high blast radius, and medium measurability; blast radius is the deciding factor, and a human has the context to distinguish what is on the critical path.
+- Propose a capped story batch is HITL because it is easy to revise, has a medium blast radius, and is moderately measurable; measurability is the deciding factor, since a human can review and correct it.
+- Post a routine project update is HITL because it is hard to reverse, has a high blast radius, and is easy to verify; blast radius is the deciding factor, so a human can review and correct it before it goes out.
+- Approve a company-wide update stays Above because it is hard to reverse, has a high blast radius, and is moderately measurable; blast radius is the deciding factor, since it is too important to delegate.
 
 ## Hardest call
 
-_Your toughest "above vs below" decision and how you resolved it. (Share this in `#cohort-channel`.)_
+The hardest call was drafting the update. Blast radius settled it: the draft is not public yet, so a human can review it before it is posted.

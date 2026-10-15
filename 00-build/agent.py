@@ -27,7 +27,9 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
+from datetime import date
 from pathlib import Path
 
 from openai import OpenAI
@@ -49,6 +51,11 @@ MAX_ITERATIONS = int(os.environ.get("CORTEX_MAX_ITERATIONS", "8"))
 MAX_REVISIONS = int(os.environ.get("CORTEX_MAX_REVISIONS", "2"))
 COST_CAP_USD = float(os.environ.get("CORTEX_COST_CAP_USD", "0.50"))
 MAX_QUEUE_ITEMS = int(os.environ.get("CORTEX_MAX_QUEUE_ITEMS", "10"))
+# Stuck exit (loop-spec §3): a required source that fails this many times halts the run.
+MAX_SOURCE_ATTEMPTS = int(os.environ.get("CORTEX_MAX_SOURCE_ATTEMPTS", "3"))
+REQUIRED_SOURCES = {"get_project", "get_activity", "get_norms"}
+# Dedupe override (loop-spec §1): re-run even if this project+week is already done.
+FORCE_RERUN = os.environ.get("CORTEX_FORCE_RERUN", "") == "1"
 # Rough $ per 1M tokens for your chosen model, set to match its pricing.
 PRICE_IN = float(os.environ.get("CORTEX_PRICE_IN_PER_M", "0.15"))
 PRICE_OUT = float(os.environ.get("CORTEX_PRICE_OUT_PER_M", "0.60"))
@@ -108,7 +115,21 @@ def banner(text: str) -> None:
     print(f"\n{'=' * 64}\n{text}\n{'=' * 64}")
 
 
-def emit_deliverable(which: str, draft: str, *, accepted: bool,
+def run_key(which: str, task_body: str) -> str:
+    """Dedupe key (loop-spec §1): project + ISO week, e.g. P-NORTH-2026-W42."""
+    m = re.search(r"^Project:\s*(\S+)", task_body, re.MULTILINE)
+    project = m.group(1) if m else which
+    year, week, _ = date.today().isocalendar()
+    return f"{project}-{year}-W{week:02d}"
+
+
+def already_done(key: str) -> bool:
+    """True if a validator-accepted draft exists for this key. Held drafts don't count."""
+    out = OUTPUT_DIR / f"{key}.md"
+    return out.exists() and "accepted by validator" in out.read_text().splitlines()[0]
+
+
+def emit_deliverable(key: str, draft: str, *, accepted: bool,
                      reason: str, cost: float) -> None:
     """Surface AND persist Cortex's drafted status update so it can't get lost in
     the scroll-back. This is still a DRAFT held for human review, never a post,
@@ -128,7 +149,7 @@ def emit_deliverable(which: str, draft: str, *, accepted: bool,
 
     if draft.strip():
         OUTPUT_DIR.mkdir(exist_ok=True)
-        out = OUTPUT_DIR / f"status-update-{which}.md"
+        out = OUTPUT_DIR / f"{key}.md"
         state = "accepted by validator" if accepted else "HELD, escalated"
         out.write_text(
             f"<!-- Cortex draft, {state}; NOT posted. Run cost ~ ${cost:.4f}. -->\n"
@@ -145,8 +166,15 @@ def run(which: str = "happy") -> None:
         print(task)
         return
 
-    banner(f"CORTEX RUN, fixture: task-{which}  (auto-queue cap {MAX_QUEUE_ITEMS} items)")
+    key = run_key(which, task["body"])
+    banner(f"CORTEX RUN, fixture: task-{which}  key {key}  "
+           f"(auto-queue cap {MAX_QUEUE_ITEMS} items)")
     print(task["body"])
+
+    if already_done(key) and not FORCE_RERUN:
+        banner(f"SKIPPED, an accepted draft for {key} already exists "
+               f"(run-output/{key}.md). Set CORTEX_FORCE_RERUN=1 to redo it.")
+        return
 
     messages = [
         {"role": "system", "content": CORTEX_SYSTEM},
@@ -155,12 +183,14 @@ def run(which: str = "happy") -> None:
     source_log: list[str] = [task["body"]]
     revisions = 0
     last_draft = ""
+    source_failures: dict[str, int] = {}
+    dont_repeat: list[str] = []  # critic rules broken this run (loop-spec §2)
 
     for step in range(1, MAX_ITERATIONS + 1):
         if bounds.over_cap():
             reason = f"cost cap ${COST_CAP_USD} hit at ${bounds.cost:.4f}"
             banner(f"BOUND TRIPPED, {reason}. Halting and escalating to a human.")
-            emit_deliverable(which, last_draft, accepted=False,
+            emit_deliverable(key, last_draft, accepted=False,
                              reason=reason, cost=bounds.cost)
             return
 
@@ -180,6 +210,16 @@ def run(which: str = "happy") -> None:
                 print(f"          -> {json.dumps(result)[:300]}")
                 messages.append({"role": "tool", "tool_call_id": call.id,
                                  "content": json.dumps(result)})
+                if fn in REQUIRED_SOURCES and "error" in result:
+                    source_failures[fn] = source_failures.get(fn, 0) + 1
+            stuck = [fn for fn, n in source_failures.items() if n >= MAX_SOURCE_ATTEMPTS]
+            if stuck:
+                reason = (f"stuck: required source {stuck[0]} failed "
+                          f"{MAX_SOURCE_ATTEMPTS}x")
+                banner(f"STUCK, {reason}. Halting and escalating to a human.")
+                emit_deliverable(key, last_draft, accepted=False,
+                                 reason=reason, cost=bounds.cost)
+                return
             continue
 
         # No tool calls => Cortex produced a proposed output. Validate it.
@@ -194,11 +234,20 @@ def run(which: str = "happy") -> None:
                         + verdict["_usage"]["completion"] * PRICE_OUT) / 1_000_000
         print(json.dumps({k: v for k, v in verdict.items() if k != "_usage"}, indent=2))
 
+        escalation = re.search(r"^\W*ESCALATE:.*$", proposed, re.MULTILINE)
+        if verdict["verdict"] == "pass" and escalation:
+            reason = escalation.group(0).strip()
+            banner(f"ESCALATED to a human, Cortex handed this off. Nothing posted, "
+                   f"no commitments made. Run cost ≈ ${bounds.cost:.4f}")
+            emit_deliverable(key, proposed, accepted=False,
+                             reason=reason, cost=bounds.cost)
+            return
+
         if verdict["verdict"] == "pass":
             banner(f"HITL CHECKPOINT, status update + any proposed stories queued for "
                    f"your review. Nothing posted, no commitments made. "
                    f"Run cost ≈ ${bounds.cost:.4f}")
-            emit_deliverable(which, proposed, accepted=True,
+            emit_deliverable(key, proposed, accepted=True,
                              reason="validator passed", cost=bounds.cost)
             return
 
@@ -206,20 +255,28 @@ def run(which: str = "happy") -> None:
             reason = f"validator rejected {MAX_REVISIONS}x (revision cap)"
             banner(f"REVISION CAP hit ({MAX_REVISIONS}). Escalating to a human "
                    f"instead of looping. Run cost ≈ ${bounds.cost:.4f}")
-            emit_deliverable(which, last_draft, accepted=False,
+            emit_deliverable(key, last_draft, accepted=False,
                              reason=reason, cost=bounds.cost)
             return
 
         revisions += 1
         print(f"\n-> critic rejected; revision {revisions}/{MAX_REVISIONS}")
+        for v in verdict.get("violations", []):
+            item = f"Rule: {v['rule']} -> Fix: {v['fix']}"
+            if item not in dont_repeat:
+                dont_repeat.append(item)
+        if not verdict.get("violations"):  # no structured violations; fall back
+            dont_repeat.extend(verdict["reasons"])
         messages.append(msg)
         messages.append({"role": "user", "content":
-                         "A validator rejected that for these reasons: "
-                         f"{verdict['reasons']}. Fix it or escalate."})
+                         "A validator rejected that draft. Don't-repeat list for this "
+                         "run (every item applies to all further drafts):\n"
+                         + "\n".join(f"- {d}" for d in dont_repeat)
+                         + "\nFix it or escalate."})
 
     banner(f"MAX ITERATIONS ({MAX_ITERATIONS}) reached without finishing. "
            f"Escalating. Run cost ≈ ${bounds.cost:.4f}")
-    emit_deliverable(which, last_draft, accepted=False,
+    emit_deliverable(key, last_draft, accepted=False,
                      reason=f"max iterations ({MAX_ITERATIONS}) reached",
                      cost=bounds.cost)
 

@@ -41,7 +41,21 @@ How to finish a run. End with exactly one of:
   DONE: <the drafted update, clearly labelled "queued for your review", plus the
         proposed-stories status if any>
   ESCALATE: <one line on why a human must take it from here>
+Before calling propose_stories, map each story to a named in-scope item in the PRD and
+drop any story that does not map. Queued stories cannot be withdrawn.
+Use exactly one of the two, never both. ESCALATE only when a human must take over
+something you cannot do (open Sev-1 / at-risk, an unconfirmed date or launch gate, a
+confidential item involved, a batch over the cap, data you could not pull, an
+already-queued story that should not have been queued). A routine
+"please review before it goes out" is part of DONE, not an escalation.
 Always show the data you relied on so a human can check you.
+
+When a validator rejects a draft, you get the rules you broke and how to fix them,
+as a "don't repeat" list that grows across revisions. Obey every item on it.
+- A revision must not restate content you removed, not even in an apology or a
+  note about what you fixed. Just leave it out.
+- The DONE output is the deliverable only: no commentary about earlier drafts, no
+  "please discard my previous message".
 """
 
 CRITIC_SYSTEM = """\
@@ -65,10 +79,20 @@ source data it used, check:
    different number. In that case return "pass" as long as the output posts nothing,
    commits nothing, and leaks no confidential data, do NOT fail it over wording, and
    do NOT demand the rejected action proceed.
+7. If a past action cannot be undone (e.g. a story already queued via propose_stories;
+   there is no withdraw tool) and Cortex flags it and ESCALATEs it for a human to
+   fix, that is the CORRECT response. Judge the output on that escalation (checks 4
+   and 6); do NOT fail it for the past action or demand an undo that is impossible.
 
 An ESCALATE output is going straight to a human, so judge it only on checks 4 and 6:
 it must post/commit nothing and leak nothing. Do not nitpick its phrasing.
 
-Respond as strict JSON: {"verdict": "pass" | "fail", "reasons": ["..."]}.
-Fail if ANY applicable check fails. Be specific in reasons.
+Respond as strict JSON:
+{"verdict": "pass" | "fail", "reasons": ["..."],
+ "violations": [{"rule": "...", "fix": "..."}]}
+Fail if ANY applicable check fails. Be specific in reasons (they go to the human).
+`violations` is what goes back to Cortex: one entry per failed check, naming the
+rule or norm it broke and an instruction to fix it. Never restate confidential or
+embargoed content (names, dates, details) in a rule or fix; refer to it generically
+(e.g. "a confidential roadmap item"). On a pass, `violations` is [].
 """

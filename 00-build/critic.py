@@ -11,7 +11,10 @@ from prompts import CRITIC_SYSTEM
 
 
 def review(client, model: str, proposed_output: str, source_data: str) -> dict:
-    """Return {"verdict": "pass"|"fail", "reasons": [...]} for a proposed output."""
+    """Return {"verdict": "pass"|"fail", "reasons": [...], "violations": [{"rule", "fix"}]}.
+
+    `reasons` are for the human reading the trace; only `violations` go back to Cortex.
+    """
     resp = client.chat.completions.create(
         model=model,
         messages=[
@@ -20,12 +23,26 @@ def review(client, model: str, proposed_output: str, source_data: str) -> dict:
                 f"SOURCE DATA Cortex used:\n{source_data}\n\n"
                 f"CORTEX PROPOSED OUTPUT:\n{proposed_output}"},
         ],
-        response_format={"type": "json_object"},
+        # json_schema (not json_object) so this works on OpenAI and on Anthropic's
+        # OpenAI-compatible endpoint alike.
+        response_format={"type": "json_schema", "json_schema": {
+            "name": "verdict", "strict": True, "schema": {
+                "type": "object", "additionalProperties": False,
+                "required": ["verdict", "reasons", "violations"],
+                "properties": {
+                    "verdict": {"type": "string", "enum": ["pass", "fail"]},
+                    "reasons": {"type": "array", "items": {"type": "string"}},
+                    "violations": {"type": "array", "items": {
+                        "type": "object", "additionalProperties": False,
+                        "required": ["rule", "fix"],
+                        "properties": {"rule": {"type": "string"},
+                                       "fix": {"type": "string"}}}}}}}},
     )
     usage = resp.usage
     try:
         verdict = json.loads(resp.choices[0].message.content)
     except (json.JSONDecodeError, TypeError):
-        verdict = {"verdict": "fail", "reasons": ["critic returned unparseable output"]}
+        verdict = {"verdict": "fail", "reasons": ["critic returned unparseable output"],
+                   "violations": []}
     verdict["_usage"] = {"prompt": usage.prompt_tokens, "completion": usage.completion_tokens}
     return verdict

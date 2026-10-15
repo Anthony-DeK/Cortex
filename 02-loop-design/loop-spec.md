@@ -22,7 +22,7 @@
 - **Hook only**: if nobody asks, no update gets made; the weekly cadence would depend on someone remembering.
 - **Goal** (as the trigger): it describes how a run iterates until it's validated, not what starts it. Cortex already iterates inside each run (drafter ↔ critic).
 
-**Idempotency / dedupe:** every run is keyed on **project + ISO week** (e.g. `P-NORTH:2026-W42`). Before drafting, Cortex checks whether a draft already exists for that key and skips if so. This covers a duplicated message and the Monday cron firing after a hook run already drafted that week's update.
+**Idempotency / dedupe:** every run is keyed on **project + ISO week**, which is also the draft's filename: `<MMDD>-<project>-status-update.md`, where `<MMDD>` is the Monday of that week (e.g. `run-output/1012-P-NORTH-status-update.md`). Before drafting, Cortex checks whether a draft already exists for that key and skips if so. This covers a duplicated message and the Monday cron firing after a hook run already drafted that week's update.
 
 ## 2. Goal / definition of done
 

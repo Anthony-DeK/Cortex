@@ -116,11 +116,16 @@ def banner(text: str) -> None:
 
 
 def run_key(which: str, task_body: str) -> str:
-    """Dedupe key (loop-spec §1): project + ISO week, e.g. P-NORTH-2026-W42."""
+    """Dedupe key (loop-spec §1): project + ISO week, used as the draft filename.
+
+    <MMDD> is the Monday of the run's week, so every run that week shares one key,
+    e.g. 1012-P-NORTH-status-update.
+    """
     m = re.search(r"^Project:\s*(\S+)", task_body, re.MULTILINE)
     project = m.group(1) if m else which
     year, week, _ = date.today().isocalendar()
-    return f"{project}-{year}-W{week:02d}"
+    monday = date.fromisocalendar(year, week, 1)
+    return f"{monday:%m%d}-{project}-status-update"
 
 
 def already_done(key: str) -> bool:

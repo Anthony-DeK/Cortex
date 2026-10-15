@@ -53,7 +53,7 @@ python agent.py jailbreak    # injection refusal
 
 > Each run prints the full trace to your terminal AND ends with the drafted status
 > update in a clear `FINAL STATUS UPDATE` (or, on an escalation, `LAST DRAFT (held)`)
-> block, also saved to `00-build/run-output/status-update-<task>.md` for your review.
+> block, also saved to `00-build/run-output/<MMDD>-<project>-status-update.md` (`<MMDD>` = Monday of the run's week) for your review.
 > That saved file is always a **draft, held for a human, never posted** (there is no
 > publish tool). To capture the whole trace too, redirect it:
 > `python agent.py | tee happy-run.txt`. (Your module deliverables, like

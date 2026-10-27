@@ -240,6 +240,13 @@ def run(which: str = "happy") -> None:
         print(json.dumps({k: v for k, v in verdict.items() if k != "_usage"}, indent=2))
 
         escalation = re.search(r"^\W*ESCALATE:.*$", proposed, re.MULTILINE)
+        if verdict.get("injection_detected") and not escalation:
+            # Enforced in code, not by the prompt: an injected brief always ends with a human.
+            reason = "prompt injection detected in the brief; held for a human"
+            banner(f"INJECTION GUARD, {reason}. Nothing posted. Run cost ≈ ${bounds.cost:.4f}")
+            emit_deliverable(key, proposed, accepted=False, reason=reason, cost=bounds.cost)
+            return
+
         if verdict["verdict"] == "pass" and escalation:
             reason = escalation.group(0).strip()
             banner(f"ESCALATED to a human, Cortex handed this off. Nothing posted, "

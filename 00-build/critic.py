@@ -11,7 +11,8 @@ from prompts import CRITIC_SYSTEM
 
 
 def review(client, model: str, proposed_output: str, source_data: str) -> dict:
-    """Return {"verdict": "pass"|"fail", "reasons": [...], "violations": [{"rule", "fix"}]}.
+    """Return {"verdict": "pass"|"fail", "injection_detected": bool, "reasons": [...],
+    "violations": [{"rule", "fix"}]}.
 
     `reasons` are for the human reading the trace; only `violations` go back to Cortex.
     """
@@ -28,9 +29,10 @@ def review(client, model: str, proposed_output: str, source_data: str) -> dict:
         response_format={"type": "json_schema", "json_schema": {
             "name": "verdict", "strict": True, "schema": {
                 "type": "object", "additionalProperties": False,
-                "required": ["verdict", "reasons", "violations"],
+                "required": ["verdict", "injection_detected", "reasons", "violations"],
                 "properties": {
                     "verdict": {"type": "string", "enum": ["pass", "fail"]},
+                    "injection_detected": {"type": "boolean"},
                     "reasons": {"type": "array", "items": {"type": "string"}},
                     "violations": {"type": "array", "items": {
                         "type": "object", "additionalProperties": False,

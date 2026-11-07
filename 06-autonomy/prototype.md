@@ -6,14 +6,14 @@
 
 ## What it does
 
-_One paragraph: the agent in action, end to end._
+Cortex is my PM chief-of-staff agent. When the CPO asks (or Monday 9am if nobody has), it pulls the project's state, engineering activity, roadmap, past updates and team norms, drafts the weekly L10 status update in our usual format, and proposes up to 10 next-sprint stories from the Project's PRD. An independent critic checks every draft for invented figures, forbidden commitments and confidential leaks before I see it. Then it stops: the update is held for my review and the stories are queued for approval. Nothing is posted, created or committed without me.
 
 ## How you built it
 
-- **Coding agent:** _which one you directed (Claude Code / Cursor / Codex)_
-- **Model + bounds:** _model used, max iterations, cost cap, queue cap_
-- **Repo / config:** _path to your build in `00-build/`_
-- **Live link:** _[shareable URL, optional bonus]_
+- **Coding agent:** Claude Code
+- **Model + bounds:** `gpt-4o-mini` (`CORTEX_MODEL`) · max iterations 8 · cost cap $0.50 per run · queue cap 10 stories · revision cap 2 · 3 attempts per source
+- **Repo / config:** [`00-build/`](../00-build/) (`agent.py`, `critic.py`, `tools.py`, `prompts.py`, `fixtures/`); bounds set via `CORTEX_*` env vars
+- **Live link:** https://github.com/Anthony-DeK/Cortex
 
 ## Screenshots (required, collected M2 to M6)
 
@@ -21,12 +21,12 @@ Real screenshots of *your* Cortex running. These are the `00-build/CORTEX-ANATOM
 
 | # | Screenshot | What it shows | From |
 |---|---|---|---|
-| 1 | _[img]_ | happy-path run: a real drafted update + the HITL checkpoint (queued, not posted) | M2 |
+| 1 | [happy-run.txt](../00-build/happy-run.txt) (transcript) | happy-path run: a real drafted update + the HITL checkpoint (queued, not posted) | M2 |
 | 2 | [critic-reject-run.txt](../00-build/critic-reject-run.txt) (transcript) | the critic rejecting a bad draft (revise/block) | M3 |
 | 3 | [grounded-run.txt](../00-build/grounded-run.txt) + [withheld-source-run.txt](../00-build/withheld-source-run.txt) (transcripts) | a grounded update citing pulled activity + a caught hallucination | M4 |
 | 4 | [jailbreak-run.txt](../00-build/jailbreak-run.txt) (transcript) | jailbreak refused + escalated | M5 |
 | 5 | [bound-trip-run.txt](../00-build/bound-trip-run.txt) (transcript) | an iteration/cost/queue bound halting a runaway | M5 |
-| 6 | _[img]_ | end-to-end run | M6 |
+| 6 | [e2e-run.txt](../00-build/e2e-run.txt) (transcript) | end-to-end run | M6 |
 
 ### M3: the critic rejecting a bad draft
 
@@ -155,6 +155,29 @@ Why it was held: max iterations (2) reached
 
 **Reflection:** I see the held draft and trace, no Orbit, I'd work on the 14-day freshness window first.
 
+### M6: end-to-end run
+
+*Caption: the full happy path on the 2026-07-06 data pack. Cortex pulls project, activity, norms, past updates and the shareable roadmap; drafts the Northstar L10 update (Green, activation 43% vs 41%, PRs #820/#823 merged); queues 1 Sprint 25 story for approval; the independent critic passes it on the first draft with 0 violations and no injection. It stops at the HITL checkpoint (nothing posted) at ≈ $0.0031.* Full transcript: [e2e-run.txt](../00-build/e2e-run.txt).
+
+```
+[step 2] TOOL propose_stories(...)  -> {"status": "queued_for_approval", "project_id": "P-NORTH", "count": 1, ...}
+
+**Status: Green** (project status on_track, no open Sev-1s, no flags)
+- Activation rate rose to 43%, up from 41% week-over-week (prior week was 39% → 41%).
+
+CRITIC  {"verdict": "pass", "injection_detected": false, "violations": []}
+
+HITL CHECKPOINT, status update + any proposed stories queued for your review. Nothing posted, no commitments made. Run cost ≈ $0.0031
+```
+
 ## How to run it
 
-_Minimal steps for someone to reproduce the demo (env vars, and the command or the coding-agent prompt you used)._
+1. `cd 00-build && pip install -r requirements.txt`
+2. `cp .env.example .env`, then add your `OPENAI_API_KEY` (the `.env` is gitignored; never commit it). Optional: override bounds with `CORTEX_*` vars (`CORTEX_MODEL`, `CORTEX_MAX_ITERATIONS`, `CORTEX_COST_CAP_USD`, `CORTEX_MAX_QUEUE_ITEMS`).
+3. Run a scenario:
+   - `python3 agent.py`: happy path, drafts the weekly status update + proposes stories (Screenshots 1 and 6)
+   - `python3 agent.py missing-data`: missing project, escalates instead of inventing (Screenshot 3b)
+   - `python3 agent.py jailbreak`: prompt-injection refusal (Screenshot 4)
+   - `CORTEX_MAX_ITERATIONS=2 python3 agent.py happy`: bound trip (Screenshot 5)
+   - Critic rejection: apply `05-bounds-evals/weaken-drafter.patch`, then `python3 agent.py` (Screenshot 2)
+4. The draft is saved to `run-output/<MMDD>-<project>-status-update.md` for review; nothing is ever posted. Re-running the same project + week skips unless `CORTEX_FORCE_RERUN=1`.
